@@ -17,5 +17,42 @@ class Target(BaseModel):
 class Change(BaseModel):
     steam_id = ForeignKeyField(Target, backref='targets')
     alias = TextField()
+    
+def main():
+    db.connect()
 
-db.connect()
+if __name__ == "__main__":
+    main()
+
+def getTargets():
+    
+    return Target.select()
+
+def getTargetById(id):
+    query = Target.select().where(Target.steam_id == id)
+    if not query.exists():
+        return False
+    else:
+        return query.get()
+    
+def putTarget(steamId,name,vanityURL):
+    newRecord = Target(
+        steam_id=steamId, 
+        name=name, 
+        vanity_url=vanityURL)
+    newRecord.save()
+
+def deleteTarget(id):
+    qry = Target.delete().where(Target.steam_id == id)
+    qry.execute()
+
+def getLatestChangeById(id):
+    query = Change.select().where(Change.steam_id == id).order_by(Change.created_at.desc())
+    if not query.exists():
+        return False
+    else:
+        return query.get()
+
+def updateChangeRecord(id,newAlias):
+    updateRecord = Change(steam_id=id, alias=newAlias)
+    updateRecord.save()
