@@ -19,7 +19,7 @@ POST_UPDATES_ENABLED = False
 EMOJI_REPLY_ENABLED = False
 MESSAGE_REPLY_ENABLED = False
 # TEST_MODE will only send to stebs place's channel
-TEST_MODE_ENABLED = False
+TEST_MODE_ENABLED = True
 
 # Variables
 DISCORD_BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -287,12 +287,11 @@ async def listTargets(message: discord.MessageType):
             currentTarget.steam_id, currentTarget.name))
 
         result = db_conn.getLatestChangeById(currentTarget.steam_id)
-
-        if not result:
-            continue
+        
+        print('steb debugging [{}] [{}]')
 
         candidates.append(candidate(currentTarget.name,
-                          result.get().alias, '', currentTarget.steam_id, buildProfileDisplayURL(currentTarget), currentTarget.status))
+                          result.alias, '', currentTarget.steam_id, buildProfileDisplayURL(currentTarget), currentTarget.status))
 
     elements = buildTargetsListMessage(candidates)
 
@@ -395,6 +394,7 @@ async def pollChangesJob():
         db_conn.updateTargetStatus(currentTarget.steam_id, status)
 
         # load lastest change and compare
+        # TODO fix order by clause in dbconn
         latestChange = db_conn.getLatestChangeById(currentTarget.steam_id)
 
         # If no change history, skip comparison and add to update candidates
@@ -436,7 +436,7 @@ async def pollChangesJob():
         for channel in channels:
             await channel.send(embed=embedVar)
     else:
-        print("no candidates so we have nothing to do!")
+        print("no name update candidates!")
         
      # if statusUpdateCandidates populated update channels
     if statusUpdateCandidates:
@@ -454,7 +454,7 @@ async def pollChangesJob():
         for channel in channels:
             await channel.send(embed=embedVar)
     else:
-        print("no candidates so we have nothing to do!")
+        print("no status update candidates!")
 
     now = datetime.now()
     nextRunDts = now + timedelta(0, POLLING_INTERVAL_SECONDS)
