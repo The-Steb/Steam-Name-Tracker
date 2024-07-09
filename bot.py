@@ -14,7 +14,7 @@ intents.message_content = True
 client = discord.Client(command_prefix="!", intents=intents)
 
 # Functionality toggles
-POLLING_JOB_ENABLED = True
+POLLING_JOB_ENABLED = False
 POST_UPDATES_ENABLED = False
 EMOJI_REPLY_ENABLED = False
 MESSAGE_REPLY_ENABLED = False
@@ -44,6 +44,11 @@ class candidate:
         self.steamId = steamId
         self.url = url
 
+class steamProfile:
+    def __init__(self, name, status):
+        self.name = name
+        self.status = status
+
 
 def buildProfileDisplayURL(target: db_conn.Target):
     if target.vanity_url:
@@ -51,11 +56,20 @@ def buildProfileDisplayURL(target: db_conn.Target):
     else:
         return STEAM_COMMUNITY_PROFILE_URL.format(target.steam_id)
 
+def getSteamProfilePageContentFromURL(url):
+    return BeautifulSoup(requests.get(url).text, "html.parser")
 
-def getSteamNameFromURL(url):
+def getSteamStatusFromContent(content):
+    print("retrieving target steam status")
+    elem = content.find("div",{"class": "profile_in_game_header"})
+    if elem:
+        return elem.string[10:]
+    else:
+        return 'Private'
+
+def getSteamNameFromContent(content):
     print("retrieving target steam name")
-    soup = BeautifulSoup(requests.get(url).text, "html.parser")
-    elem = soup.find("title")
+    elem = content.find("title")
     print("raw steam name is: [{}]".format(elem.string))
     if len(elem.string) > 19 and not elem.string == STEAM_COMMUNITY_TITLE_ERROR:
         name = elem.string[19:]
@@ -63,7 +77,26 @@ def getSteamNameFromURL(url):
         return name
     else:
         return False
+    
+def getSteamProfileFromSteamId(id):
+    print('retrieving target steam profile using their Steam ID')
+    content : BeautifulSoup = getSteamProfilePageContentFromURL(STEAM_COMMUNITY_PROFILE_URL.format(id))
+    name = getSteamNameFromContent(content)
+    status = getSteamStatusFromContent(content)
+    return steamProfile(name, status)
 
+def getSteamProfileFromVanityId(id):
+    print('retrieving target steam profile using their vanity ID')
+    content : BeautifulSoup = getSteamProfilePageContentFromURL(STEAM_COMMUNITY_ID_URL.format(id))
+    name = getSteamNameFromContent(content)
+    status = getSteamStatusFromContent(content)
+    return steamProfile(name, status)
+
+def getSteamProfile(target : db_conn.Target):
+    if target.vanity_url:
+        return getSteamProfileFromVanityId(target.vanity_url)
+    else:
+        return getSteamProfileFromSteamId(target.steam_id)
 
 def getSteamIDFromSteamApi(id):
     # TODO handle steam error
@@ -80,16 +113,6 @@ def getSteamIDFromSteamApi(id):
         return steamId
     else:
         return False
-
-
-def getSteamNameFromSteamId(id):
-    print('retrieving target steam name using their Steam ID')
-    return getSteamNameFromURL(STEAM_COMMUNITY_PROFILE_URL.format(id))
-
-
-def getSteamNameFromVanityId(id):
-    print('retrieving target steam name using their vanity ID')
-    return getSteamNameFromURL(STEAM_COMMUNITY_ID_URL.format(id))
 
 
 def getChannelList(guilds):
@@ -168,21 +191,26 @@ async def addTarget(message: discord.MessageType):
     # exists check
     query = db_conn.getTargetById(identifier)
 
-    if not query.exists():
+    if not query:
         result = getSteamIDFromSteamApi(identifier)
 
         steamId = ''
         newAlias = ''
         vanityURL = ''
+        status = ''
 
         # if result from getSteamIDFromSteamApi is successful, then we are dealing with a vanity URL
         if result:
             steamId = result
             vanityURL = identifier
-            newAlias = getSteamNameFromVanityId(identifier)
+            profile : steamProfile = getSteamProfileFromVanityId(identifier)
+            newAlias=profile.name
+            status=profile.status
         else:
             steamId = identifier
-            newAlias = getSteamNameFromSteamId(identifier)
+            profile : steamProfile = getSteamProfileFromSteamId(identifier)
+            newAlias=profile.name
+            status=profile.status
 
         if not name:
             name = newAlias
@@ -193,8 +221,8 @@ async def addTarget(message: discord.MessageType):
             return
 
         # add records
-        db_conn.putTarget(steamId, name, vanityURL)
-        db_conn.updateChangeRecord(steamId, newAlias)
+        db_conn.putTarget(steamId, name, vanityURL,status)
+        db_conn.putChangeRecord(steamId, newAlias)
 
     # react to message
     await thumbsUp(message)
@@ -217,7 +245,8 @@ async def removeTarget(message: discord.MessageType):
 
 async def listTargets(message: discord.MessageType):
     # load Target and latest alias
-    targetList = db_conn.getTargets
+    target = db_conn.Target
+    targetList = target.select()
 
     candidates = []
 
@@ -227,7 +256,7 @@ async def listTargets(message: discord.MessageType):
 
         result = db_conn.getLatestChangeById(currentTarget.steam_id)
 
-        if not result.exists():
+        if not result:
             continue
 
         candidates.append(candidate(currentTarget.name,
@@ -312,24 +341,31 @@ async def pollChangesJob():
             currentTarget.steam_id, currentTarget.name))
 
         # wget url and pull name
-        newAlias = ''
 
         if currentTarget.vanity_url:
-            newAlias = getSteamNameFromVanityId(currentTarget.vanity_url)
+            newAlias = getSteamProfileFromVanityId(currentTarget.vanity_url)
         else:
-            newAlias = getSteamNameFromSteamId(currentTarget.steam_id)
+            newAlias = getSteamProfileFromSteamId(currentTarget.steam_id)
+            
+        profile = getSteamProfile(currentTarget)
+        
+        newAlias = profile.name
+        status = profile.status
 
         if not newAlias:
             # TODO handle not finding steam name
             print('COULD NOT FIND STEAM NAME!')
             continue
 
+        #update status
+        db_conn.updateTargetStatus(currentTarget.steam_id,status)
+
         # load lastest change and compare
         latestChange = db_conn.getLatestChangeById(currentTarget.steam_id)
 
         # If no change history, skip comparison and add to update candidates
         if not latestChange:
-            db_conn.updateChangeRecord(currentTarget.steam_id,newAlias)
+            db_conn.putChangeRecord(currentTarget.steam_id,newAlias)
             candidates.append(candidate(currentTarget.name,
                               newAlias, '', currentTarget.steam_id, buildProfileDisplayURL(currentTarget)))
             continue
@@ -341,7 +377,7 @@ async def pollChangesJob():
             print("we found no name change, skipping")
             continue
             
-        db_conn.updateChangeRecord(currentTarget.steam_id, newAlias)
+        db_conn.putChangeRecord(currentTarget.steam_id, newAlias)
         candidates.append(candidate(currentTarget.name, newAlias,
                           latestChange.alias, currentTarget.steam_id, buildProfileDisplayURL(currentTarget)))
 
@@ -372,6 +408,9 @@ async def pollChangesJob():
 @client.event
 async def on_ready():
     print("We have logged in as {0.user}".format(client))
+    
+    db_conn.db.connect()
+    
     # Start the polling job
     if POLLING_JOB_ENABLED:
         pollChangesJob.start()

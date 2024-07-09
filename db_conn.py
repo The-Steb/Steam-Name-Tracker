@@ -13,6 +13,7 @@ class Target(BaseModel):
     steam_id = CharField(unique=True)
     vanity_url = TextField()
     name = TextField()
+    status = TextField(null = True)
 
 class Change(BaseModel):
     steam_id = ForeignKeyField(Target, backref='targets')
@@ -24,10 +25,6 @@ def main():
 if __name__ == "__main__":
     main()
 
-def getTargets():
-    
-    return Target.select()
-
 def getTargetById(id):
     query = Target.select().where(Target.steam_id == id)
     if not query.exists():
@@ -35,11 +32,12 @@ def getTargetById(id):
     else:
         return query.get()
     
-def putTarget(steamId,name,vanityURL):
+def putTarget(steamId,name1,vanityURL,status1):
     newRecord = Target(
         steam_id=steamId, 
-        name=name, 
-        vanity_url=vanityURL)
+        name=name1, 
+        vanity_url=vanityURL,
+        status=status1)
     newRecord.save()
 
 def deleteTarget(id):
@@ -53,6 +51,13 @@ def getLatestChangeById(id):
     else:
         return query.get()
 
-def updateChangeRecord(id,newAlias):
+def putChangeRecord(id,newAlias):
     updateRecord = Change(steam_id=id, alias=newAlias)
     updateRecord.save()
+    
+def updateTargetStatus(id,status):
+    updateRecord : Target = Target.select().where(Target.steam_id == id).get()
+    updateRecord.status = status
+    print('stebbbb [{}]'.format(updateRecord.status))
+    updateRecord.save()
+    
