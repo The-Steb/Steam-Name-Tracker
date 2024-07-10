@@ -1,12 +1,10 @@
 import discord
 from discord.ext import tasks
-import os
-import db_conn
-import requests
-from bs4 import BeautifulSoup
+from database import db_conn
 from datetime import datetime, timedelta
-from table2ascii import table2ascii as t2a, PresetStyle
-import json
+from src import steam_utils
+from src import discord_utils
+import variables
 
 # Setup bot perms
 intents = discord.Intents.default()
@@ -14,324 +12,23 @@ intents.message_content = True
 client = discord.Client(command_prefix="!", intents=intents)
 
 # Functionality toggles
-POLLING_JOB_ENABLED = True
-POST_UPDATES_ENABLED = False
-EMOJI_REPLY_ENABLED = False
-MESSAGE_REPLY_ENABLED = False
+POLLING_JOB_ENABLED = variables.POLLING_JOB_ENABLED
+POST_UPDATES_ENABLED = variables.POST_UPDATES_ENABLED
+EMOJI_REPLY_ENABLED = variables.EMOJI_REPLY_ENABLED
+MESSAGE_REPLY_ENABLED = variables.MESSAGE_REPLY_ENABLED
+
 # TEST_MODE will only send to stebs place's channel
-TEST_MODE_ENABLED = True
+TEST_MODE_ENABLED = variables.TEST_MODE_ENABLED
+STEBS_PLACE_CHANNEL_NAME = variables.STEBS_PLACE_CHANNEL_NAME
 
 # Variables
-DISCORD_BOT_TOKEN = os.environ["BOT_TOKEN"]
-STEAM_API_KEY = os.environ["STEAM_API_KEY"]
-POLLING_INTERVAL_SECONDS = 30
-STEAM_COMMUNITY_TITLE_ERROR = 'Steam Community :: Error'
-STEAM_COMMUNITY_PROFILE_URL = 'https://steamcommunity.com/profiles/{}/'
-STEAM_COMMUNITY_ID_URL = 'https://steamcommunity.com/id/{}/'
-STEAM_API_RESOLVE_VANITY_URL = 'https://api.steampowered.com/ISteamUser/ResolveVanityURL/v0001/?key={}&vanityurl={}'
-HEADER_NAME = '**Name**         |  {}'
-HEADER_ALIAS = '**Alias**        |  __**{}**__'
-HEADER_NEW_ALIAS = '**New Alias**        |  __**{}**__'
-HEADER_STEAM_ID = '**Steam ID**     |  {}'
-HEADER_PROFILE_LINK = '**Profile Link** |  {}'
-HEADER_STATUS = '**Status**       |  **{}**'
-HEADER_NEW_STATUS = '**New Status**   |  __**{}**__'
-
-
-class candidate:
-    def __init__(self, name, newAlias, oldAlias, steamId, url, status):
-        self.name = name
-        self.newAlias = newAlias
-        self.oldAlias = oldAlias
-        self.steamId = steamId
-        self.url = url
-        self.status = status
-
-
-class steamProfile:
-    def __init__(self, name, status):
-        self.name = name
-        self.status = status
-
-
-def buildProfileDisplayURL(target: db_conn.Target):
-    if target.vanity_url:
-        return STEAM_COMMUNITY_ID_URL.format(target.vanity_url)
-    else:
-        return STEAM_COMMUNITY_PROFILE_URL.format(target.steam_id)
-
-
-def getSteamProfilePageContentFromURL(url):
-    return BeautifulSoup(requests.get(url).text, "html.parser")
-
-
-def getSteamStatusFromContent(content):
-    print("retrieving target steam status")
-    elem = content.find("div", {"class": "profile_in_game_header"})
-    if elem:
-        return elem.string[10:]
-    else:
-        return 'Private'
-
-
-def getSteamNameFromContent(content):
-    print("retrieving target steam name")
-    elem = content.find("title")
-    print("raw steam name is: [{}]".format(elem.string))
-    if len(elem.string) > 19 and not elem.string == STEAM_COMMUNITY_TITLE_ERROR:
-        name = elem.string[19:]
-        print("we found the following steam name: [{}]".format(name))
-        return name
-    else:
-        return False
-
-
-def getSteamProfileFromSteamId(id):
-    print('retrieving target steam profile using their Steam ID')
-    content: BeautifulSoup = getSteamProfilePageContentFromURL(
-        STEAM_COMMUNITY_PROFILE_URL.format(id))
-    name = getSteamNameFromContent(content)
-    status = getSteamStatusFromContent(content)
-    return steamProfile(name, status)
-
-
-def getSteamProfileFromVanityId(id):
-    print('retrieving target steam profile using their vanity ID')
-    content: BeautifulSoup = getSteamProfilePageContentFromURL(
-        STEAM_COMMUNITY_ID_URL.format(id))
-    name = getSteamNameFromContent(content)
-    status = getSteamStatusFromContent(content)
-    return steamProfile(name, status)
-
-
-def getSteamProfile(target: db_conn.Target):
-    if target.vanity_url:
-        return getSteamProfileFromVanityId(target.vanity_url)
-    else:
-        return getSteamProfileFromSteamId(target.steam_id)
-
-
-def getSteamIDFromSteamApi(id):
-    # TODO handle steam error
-    data = requests.get(
-        STEAM_API_RESOLVE_VANITY_URL.format(STEAM_API_KEY, id)).json()
-    response = data.get("response")
-    success = response.get("success")
-    steamId = response.get("steamid")
-    print('Steam vanity URL response = [{}]'.format(data))
-    print('Steam vanity URL success = [{}]'.format(success))
-    print('Steam vanity URL steamId = [{}]'.format(steamId))
-
-    if success == 1:
-        return steamId
-    else:
-        return False
-
-
-def getChannelList(guilds):
-    print("building channel list")
-
-    channels = []
-
-    if TEST_MODE_ENABLED:
-        print("TEST_MODE_ENABLED is turned on! building channel list")
-        for channel in client.get_all_channels():
-            # skip warbot so they dont get mad
-            if (channel.name == 'bot_steb'):
-                channels.append(channel)
-        return channels
-
-    for channel in client.get_all_channels():
-        # skip warbot so they dont get mad
-        if (channel.name == 'warbot'):
-            continue
-
-        if 'bot' in channel.name:
-            channels.append(channel)
-    return channels
-
-
-def buildNameUpdateMessage(candidates):
-    print("building update message")
-    output = []
-
-    for candidate in candidates:
-        tableBody = []
-        tableBody.append(HEADER_NAME.format(candidate.name))
-        tableBody.append(HEADER_NEW_ALIAS.format(candidate.newAlias))
-        tableBody.append(HEADER_STEAM_ID.format(candidate.steamId))
-        tableBody.append(HEADER_PROFILE_LINK.format(candidate.url))
-        tableBody.append(HEADER_STATUS.format(candidate.status))
-
-        output.append('\n'.join(tableBody))
-
-    return output
-
-
-def buildStatusUpdateMessage(candidates):
-    print("building update message")
-    output = []
-
-    for candidate in candidates:
-        tableBody = []
-        tableBody.append(HEADER_NAME.format(candidate.name))
-        tableBody.append(HEADER_ALIAS.format(candidate.newAlias))
-        tableBody.append(HEADER_STEAM_ID.format(candidate.steamId))
-        tableBody.append(HEADER_PROFILE_LINK.format(candidate.url))
-        tableBody.append(HEADER_NEW_STATUS.format(candidate.status))
-
-        output.append('\n'.join(tableBody))
-
-    return output
-
-
-def buildTargetsListMessage(candidates):
-    print("building list message")
-    output = []
-
-    for candidate in candidates:
-        tableBody = []
-        tableBody.append(HEADER_NAME.format(candidate.name))
-        tableBody.append(HEADER_ALIAS.format(candidate.newAlias))
-        tableBody.append(HEADER_STEAM_ID.format(candidate.steamId))
-        tableBody.append(HEADER_PROFILE_LINK.format(candidate.url))
-        tableBody.append(HEADER_STATUS.format(candidate.status))
-
-        output.append('\n'.join(tableBody))
-
-    return output
-
-
-async def addTarget(message: discord.MessageType):
-    print('adding a new target')
-
-    command = message.content.strip()[5:]
-
-    res = command.rpartition(' ')
-
-    name = res[0]
-    identifier = res[2]
-
-    # if identifier is empty then we were not given an optional name
-    if not identifier:
-        name = ''
-        identifier = res[0]
-
-    print('split command into values name[{}] and identifier [{}]'.format(
-        identifier, res[2]))
-
-    # exists check
-    query = db_conn.getTargetById(identifier)
-
-    if not query:
-        result = getSteamIDFromSteamApi(identifier)
-
-        steamId = ''
-        newAlias = ''
-        vanityURL = ''
-        status = ''
-
-        # if result from getSteamIDFromSteamApi is successful, then we are dealing with a vanity URL
-        if result:
-            steamId = result
-            vanityURL = identifier
-            profile: steamProfile = getSteamProfileFromVanityId(identifier)
-            newAlias = profile.name
-            status = profile.status
-        else:
-            steamId = identifier
-            profile: steamProfile = getSteamProfileFromSteamId(identifier)
-            newAlias = profile.name
-            status = profile.status
-
-        if not name:
-            name = newAlias
-
-        # check its valid steam profile
-        if not newAlias:
-            await clown(message)
-            return
-
-        # add records
-        db_conn.putTarget(steamId, name, vanityURL, status)
-        db_conn.putChangeRecord(steamId, newAlias)
-
-    # react to message
-    await thumbsUp(message)
-
-
-async def removeTarget(message: discord.MessageType):
-    print('removing a target')
-
-    # message valid
-    if message.content.count(" ") < 1:
-        await clown(message)
-
-    command = message.content.strip()[8:]
-
-    db_conn.deleteTarget(command)
-
-    # react to message
-    await thumbsUp(message)
-
-
-async def listTargets(message: discord.MessageType):
-    # load Target and latest alias
-    target = db_conn.Target
-    targetList = target.select()
-
-    candidates = []
-
-    for currentTarget in targetList:
-        print("steam_id: {} age: {}".format(
-            currentTarget.steam_id, currentTarget.name))
-
-        result = db_conn.getLatestChangeById(currentTarget.steam_id)
-        
-        print('steb debugging [{}] [{}]')
-
-        candidates.append(candidate(currentTarget.name,
-                          result.alias, '', currentTarget.steam_id, buildProfileDisplayURL(currentTarget), currentTarget.status))
-
-    elements = buildTargetsListMessage(candidates)
-
-    embedVar = discord.Embed(title="List of tracked entries", color=0x2986cc)
-
-    for element in elements:
-        embedVar.add_field(name="", value=element, inline=False)
-
-    await message.channel.send(embed=embedVar)
-
-
-async def thumbsUp(message: discord.MessageType):
-    emoji = '\N{Thumbs Up Sign}'
-    if ('Zucchini' in message.author.name):
-        await message.add_reaction('\N{Pregnant Woman}')
-    else:
-        await message.add_reaction(emoji)
-
-
-async def thumbsDown(message: discord.MessageType):
-    emoji = '\N{Thumbs Down Sign}'
-    if ('Zucchini' in message.author.name):
-        await message.add_reaction('\N{Pregnant Woman}')
-    else:
-        await message.add_reaction(emoji)
-
-
-async def clown(message: discord.MessageType):
-    emoji = '\N{Clown Face}'
-    if ('Zucchini' in message.author.name):
-        await message.add_reaction('\N{Pregnant Woman}')
-    else:
-        await message.add_reaction(emoji)
+DISCORD_BOT_TOKEN = variables.DISCORD_BOT_TOKEN
+POLLING_INTERVAL_SECONDS = variables.POLLING_INTERVAL_SECONDS
 
 
 @client.event
 async def on_message(message: discord.MessageType):
-    print('there was a message by [{}] which says [{}]'.format(
-        message.author, message.content))
-
+    
     # exclude warbot so they dont get mad
     if (message.channel.name == 'warbot'):
         return
@@ -344,46 +41,42 @@ async def on_message(message: discord.MessageType):
         return
 
     if message.content.startswith("!add "):
-        await addTarget(message)
+        await discord_utils.add_target(message)
         return
 
     if message.content.startswith("!remove "):
-        await removeTarget(message)
+        await discord_utils.remove_target(message)
         return
 
     if message.content.startswith("!list"):
-        await listTargets(message)
+        await discord_utils.list_targets(message)
         return
 
     # catchall
     if message.content.startswith("!"):
-        await clown(message)
+        await discord_utils.clown(message)
         return
 
 
 @tasks.loop(seconds=POLLING_INTERVAL_SECONDS, count=None)
-async def pollChangesJob():
+async def poll_profile_changes_job():
     # load Target and latest alias
-    target = db_conn.Target
+    name_update_candidates = []
+    status_update_candidates = []
 
-    nameUpdateCandidates = []
-    statusUpdateCandidates = []
+    for currentTarget  in db_conn.get_targets():
 
-    for currentTarget in target.select():
-        print("steam_id: {} age: {}".format(
-            currentTarget.steam_id, currentTarget.name))
+        name = currentTarget.name
+        steam_id = currentTarget.steam_id
+        status = currentTarget.status
 
         # wget url and pull name
-
-        if currentTarget.vanity_url:
-            newAlias = getSteamProfileFromVanityId(currentTarget.vanity_url)
-        else:
-            newAlias = getSteamProfileFromSteamId(currentTarget.steam_id)
-
-        profile = getSteamProfile(currentTarget)
+        profile = steam_utils.get_steam_profile(currentTarget)
 
         newAlias = profile.name
-        status = profile.status
+        newStatus = profile.status
+        
+        print('new status!!! [{}]'.format(newStatus))
 
         if not newAlias:
             # TODO handle not finding steam name
@@ -391,42 +84,42 @@ async def pollChangesJob():
             continue
 
         # update status
-        db_conn.updateTargetStatus(currentTarget.steam_id, status)
+        db_conn.updateTargetStatus(steam_id, status)
 
         # load lastest change and compare
-        # TODO fix order by clause in dbconn
-        latestChange = db_conn.getLatestChangeById(currentTarget.steam_id)
+        query = db_conn.getLatestChangeById(steam_id)
+
+        target_url = steam_utils.build_profile_display_url(currentTarget)
 
         # If no change history, skip comparison and add to update candidates
-        if not latestChange:
-            db_conn.putChangeRecord(currentTarget.steam_id, newAlias)
-            nameUpdateCandidates.append(candidate(currentTarget.name,
-                              newAlias, '', currentTarget.steam_id, buildProfileDisplayURL(currentTarget), currentTarget.status))
+        if not query:
+            db_conn.putChangeRecord(steam_id, newAlias)
+            name_update_candidates.append(discord_utils.candidate(name,
+                                                                newAlias, '', steam_id, target_url, status))
             continue
         
-        if status != currentTarget.status:
-            db_conn.updateTargetStatus(currentTarget.steam_id,status)
-            statusUpdateCandidates.append(candidate(currentTarget.name,
-                              newAlias, '', currentTarget.steam_id, buildProfileDisplayURL(currentTarget), status))
+        previous_alias = query.alias
+        
+        if newStatus != status:
+            db_conn.updateTargetStatus(steam_id, newStatus)
+            status_update_candidates.append(discord_utils.candidate(name,
+                                                                  newAlias, '', steam_id, target_url, newStatus))
 
-        print("we found the following previous steam name: [{}]".format(
-            latestChange.alias))
-
-        if latestChange.alias == newAlias:
+        if previous_alias == newAlias:
             print("we found no name change, skipping")
             continue
 
-        db_conn.putChangeRecord(currentTarget.steam_id, newAlias)
-        nameUpdateCandidates.append(candidate(currentTarget.name, newAlias,
-                          latestChange.alias, currentTarget.steam_id, buildProfileDisplayURL(currentTarget), currentTarget.status))
+        db_conn.putChangeRecord(steam_id, newAlias)
+        name_update_candidates.append(discord_utils.candidate(name, newAlias,
+                                                            previous_alias, steam_id, target_url, newStatus))
 
-    # if nameUpdateCandidates populated update channels
-    if nameUpdateCandidates:
+    # if name_update_candidates populated update channels
+    if name_update_candidates:
         print("we have name update candidates so we will build the update message")
 
-        msg = buildNameUpdateMessage(nameUpdateCandidates)
+        msg = discord_utils.build_name_update_message(name_update_candidates)
 
-        channels = getChannelList(client.guilds)
+        channels = discord_utils.get_channel_list(client)
 
         embedVar = discord.Embed(
             title="Steam Name Changes Detected", color=0xff0000)
@@ -437,19 +130,19 @@ async def pollChangesJob():
             await channel.send(embed=embedVar)
     else:
         print("no name update candidates!")
-        
-     # if statusUpdateCandidates populated update channels
-    if statusUpdateCandidates:
+
+     # if status_update_candidates populated update channels
+    if status_update_candidates:
         print("we have status update candidates so we will build the update message")
 
-        msg = buildStatusUpdateMessage(statusUpdateCandidates)
+        msg = discord_utils.build_status_update_message(status_update_candidates)
 
-        channels = getChannelList(client.guilds)
+        channels = discord_utils.get_channel_list(client)
 
         embedVar = discord.Embed(
             title="Steam Online Status Changes Detected", color=0xff0000)
-        for thing in msg:
-            embedVar.add_field(name="", value=thing, inline=False)
+        for field_val in msg:
+            embedVar.add_field(name="", value=field_val, inline=False)
 
         for channel in channels:
             await channel.send(embed=embedVar)
@@ -457,9 +150,9 @@ async def pollChangesJob():
         print("no status update candidates!")
 
     now = datetime.now()
-    nextRunDts = now + timedelta(0, POLLING_INTERVAL_SECONDS)
+    next_run_dts = now + timedelta(0, POLLING_INTERVAL_SECONDS)
     print("Polling complete. Next run at {}".format(
-        nextRunDts.strftime("%d/%m/%Y %H:%M:%S")))
+        next_run_dts.strftime("%d/%m/%Y %H:%M:%S")))
 
 
 @client.event
@@ -470,6 +163,6 @@ async def on_ready():
 
     # Start the polling job
     if POLLING_JOB_ENABLED:
-        pollChangesJob.start()
+        poll_profile_changes_job.start()
 
 client.run(DISCORD_BOT_TOKEN)

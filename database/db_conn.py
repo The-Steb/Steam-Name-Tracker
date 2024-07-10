@@ -1,7 +1,7 @@
 from peewee import *
 import datetime
 
-db = SqliteDatabase('test.db')
+db = SqliteDatabase('database/test.db')
 class BaseModel(Model):
     created_at = DateTimeField(default=datetime.datetime.now)
     updated_at = DateTimeField(default=datetime.datetime.now)
@@ -24,6 +24,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def get_targets():
+    return Target.select()
 
 def getTargetById(id):
     query = Target.select().where(Target.steam_id == id)
@@ -58,6 +61,5 @@ def putChangeRecord(id,newAlias):
 def updateTargetStatus(id,status):
     updateRecord : Target = Target.select().where(Target.steam_id == id).get()
     updateRecord.status = status
-    print('stebbbb [{}]'.format(updateRecord.status))
     updateRecord.save()
     
