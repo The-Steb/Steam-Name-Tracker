@@ -1,6 +1,6 @@
 from database import db_conn
 import requests
-from bs4 import BeautifulSoup
+from lxml import objectify, etree, html
 import variables
 
 # Variables
@@ -26,21 +26,21 @@ def build_profile_display_url(target: db_conn.Target):
 
 
 def get_steam_profile_page_content_from_url(url):
-    return BeautifulSoup(requests.get(url).text, "html.parser")
+    return html.fromstring(requests.get(url).text)
 
 
 def get_steam_status_from_content(content):
     print("retrieving target steam status")
-    status_element = content.find("div", {"class": "profile_in_game_header"})
+    status_element = content.xpath("//div[contains(concat(' ', @class, ' '), ' profile_in_game_header ')]")
     if not status_element:
         return 'Private'
 
-    status = status_element.string[10:].strip()
+    status = status_element[0].text_content()[10:].strip()
 
     if status == STEAM_STATUS_IN_GAME_TEXT:
-        game_element = content.find("div", {"class": "profile_in_game_name"})
+        game_element = content.xpath("//div[contains(concat(' ', @class, ' '), ' profile_in_game_name ')]")
         if game_element:
-            game = game_element.string.strip()
+            game = game_element[0].text_content().strip()
             return status + ' ' + game
 
     return status
@@ -48,10 +48,15 @@ def get_steam_status_from_content(content):
 
 def get_steam_name_from_content(content):
     print("retrieving target steam name")
-    elem = content.find("title")
+    # find a toner
+    element = content.xpath("//title")
+    if not element:
+        return False
 
-    if len(elem.string) > 19 and not elem.string == STEAM_COMMUNITY_TITLE_ERROR:
-        name = elem.string[19:]
+    title = element[0].text_content()
+
+    if len(title) > 19 and not title == STEAM_COMMUNITY_TITLE_ERROR:
+        name = title[19:]
         print("we found the following steam name: [{}]".format(name))
         return name
     else:
@@ -61,7 +66,7 @@ def get_steam_name_from_content(content):
 
 def get_Steam_Profile_From_Steam_Id(id):
     print('retrieving target steam profile using their Steam ID')
-    content: BeautifulSoup = get_steam_profile_page_content_from_url(
+    content = get_steam_profile_page_content_from_url(
         STEAM_COMMUNITY_PROFILE_URL.format(id))
     name = get_steam_name_from_content(content)
     status = get_steam_status_from_content(content)
@@ -70,7 +75,7 @@ def get_Steam_Profile_From_Steam_Id(id):
 
 def get_steam_profile_from_vanity_id(id):
     print('retrieving target steam profile using their vanity ID')
-    content: BeautifulSoup = get_steam_profile_page_content_from_url(
+    content = get_steam_profile_page_content_from_url(
         STEAM_COMMUNITY_ID_URL.format(id))
     name = get_steam_name_from_content(content)
     status = get_steam_status_from_content(content)

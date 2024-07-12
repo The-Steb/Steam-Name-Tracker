@@ -2,13 +2,13 @@ import os
 
 # Functionality variables
 POLLING_INTERVAL_SECONDS = 60
-POLLING_JOB_ENABLED = False
+POLLING_JOB_ENABLED = True
 POST_UPDATES_ENABLED = False
 EMOJI_REPLY_ENABLED = False
 MESSAGE_REPLY_ENABLED = False
 
 # TEST_MODE will only send to stebs place's channel
-TEST_MODE_ENABLED = True
+TEST_MODE_ENABLED = False
 STEBS_PLACE_CHANNEL_NAME = 'bot_steb'
 
 # OS Variables

@@ -2,3 +2,8 @@ discord.py
 peewee.py
 requests.py
 BeautifulSoup.py
+
+apt install python3-discord
+apt install python3-peewee 
+apt install python3-requests 
+apt install python3-BeautifulSoup
