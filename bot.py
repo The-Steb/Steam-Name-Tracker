@@ -47,6 +47,10 @@ async def on_message(message: discord.MessageType):
     if message.content.startswith("!list"):
         await discord_commands.list_targets(message)
         return
+    
+    if message.content.startswith("!help"):
+        await discord_commands.help(message)
+        return
 
     # catchall
     if message.content.startswith("!"):

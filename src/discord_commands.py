@@ -2,6 +2,14 @@ import discord
 from database import db_conn
 from src import steam_utils
 from src import discord_utils
+import variables
+
+COMMANDS_HELP_TEXT = variables.COMMANDS_HELP_TEXT
+
+async def help(message: discord.MessageType):
+    print('sending help text')
+
+    await message.reply(COMMANDS_HELP_TEXT)
 
 async def add_target(message: discord.MessageType):
     print('adding a new target')
@@ -78,9 +86,13 @@ async def remove_target(message: discord.MessageType):
 async def list_targets(message: discord.MessageType):
     print('Listing all targets')
     
+    # load command
+    search_term = message.content.strip()[6:]
+    
+    print('Finding targets based on the search term [{}]'.format(search_term))
+    
     # load Target and latest alias
-    target = db_conn.Target
-    targetList = target.select()
+    targetList = db_conn.get_targets_by_name(search_term)
 
     candidates = []
 
@@ -108,4 +120,4 @@ async def list_targets(message: discord.MessageType):
     for element in elements:
         embedVar.add_field(name="", value=element, inline=False)
 
-    await message.channel.send(embed=embedVar)
+    await message.reply(embed=embedVar)

@@ -28,6 +28,9 @@ if __name__ == "__main__":
 def get_targets():
     return Target.select()
 
+def get_targets_by_name(search_term):
+    return Target.select().where(Target.name.contains(search_term))
+
 def getTargetById(id):
     query = Target.select().where(Target.steam_id == id)
     if not query.exists():
