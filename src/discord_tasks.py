@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from src import discord_utils
 
 POLLING_INTERVAL_SECONDS = variables.POLLING_INTERVAL_SECONDS
+STEAM_STATUS_TARGET_GAMES = variables.STEAM_STATUS_TARGET_GAMES
 
 @tasks.loop(seconds=POLLING_INTERVAL_SECONDS, count=None)
 async def poll_profile_changes_job(client):
@@ -25,6 +26,8 @@ async def poll_profile_changes_job(client):
 
         newAlias = profile.name
         newStatus = profile.status
+        
+        status_changed = newStatus != status
         
         print('new status!!! [{}]'.format(newStatus))
 
@@ -50,8 +53,11 @@ async def poll_profile_changes_job(client):
         
         previous_alias = query.alias
         
-        if newStatus != status:
+        if status_changed:
             db_conn.updateTargetStatus(steam_id, newStatus)
+        
+        if status_changed and any(game in newStatus for game in STEAM_STATUS_TARGET_GAMES):
+            print('Status [{}] includes a target game, we will alert')
             status_update_candidates.append(discord_utils.candidate(name,
                                                                   newAlias, '', steam_id, target_url, newStatus))
 
@@ -72,7 +78,7 @@ async def poll_profile_changes_job(client):
         channels = discord_utils.get_channel_list(client)
 
         embedVar = discord.Embed(
-            title="Steam Name Changes Detected", color=0xff0000)
+            title="Steam Name Changes Detected", color=variables.COLOUR_RED)
         for thing in msg:
             embedVar.add_field(name="", value=thing, inline=False)
 
@@ -90,7 +96,7 @@ async def poll_profile_changes_job(client):
         channels = discord_utils.get_channel_list(client)
 
         embedVar = discord.Embed(
-            title="Steam Online Status Changes Detected", color=0xff0000)
+            title="Steam Online Status Changes Detected", color=variables.COLOUR_YELLOW)
         for field_val in msg:
             embedVar.add_field(name="", value=field_val, inline=False)
 

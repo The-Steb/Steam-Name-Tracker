@@ -11,7 +11,6 @@ STEAM_COMMUNITY_ID_URL = variables.STEAM_COMMUNITY_ID_URL
 STEAM_API_RESOLVE_VANITY_URL = variables.STEAM_API_RESOLVE_VANITY_URL
 STEAM_STATUS_IN_GAME_TEXT = variables.STEAM_STATUS_IN_GAME_TEXT
 
-
 class steamProfile:
     def __init__(self, name, status):
         self.name = name

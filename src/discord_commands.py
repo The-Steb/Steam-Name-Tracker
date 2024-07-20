@@ -115,7 +115,7 @@ async def list_targets(message: discord.MessageType):
 
     elements = discord_utils.build_targets_list_message(candidates)
 
-    embedVar = discord.Embed(title="List of tracked entries", color=0x2986cc)
+    embedVar = discord.Embed(title="List of tracked entries", color=variables.COLOUR_BLUE)
 
     for element in elements:
         embedVar.add_field(name="", value=element, inline=False)
